@@ -47,22 +47,29 @@ for (const pageConfig of smokePages) {
       await postResultsButton.click();
     }
 
-    if (pageConfig.popupMenuItemSelector) {
+    // The compass menu stays open between clicks, so these run in order
+    // against the same open menu without reopening postResultsClickSelector.
+    for (const popupCheck of pageConfig.popupChecks ?? []) {
       // .first(): the compass menu can render the same item twice (e.g. a
       // "favorites" duplicate with data-favorite-order set) — either is fine
       // to click, so take the first match instead of erroring on ambiguity.
-      const menuItem = page.locator(pageConfig.popupMenuItemSelector).first();
+      const menuItem = page.locator(popupCheck.menuItemSelector).first();
       // 'attached' (DOM presence) rather than 'visible' (CSS-visible) — this
       // only needs to exist on the page, not be within the viewport; .click()
       // below still auto-scrolls it into view and re-checks real clickability.
-      await menuItem.waitFor({ state: 'attached', timeout: 60000 });
+      await menuItem.waitFor({ state: 'attached' });
 
       const [popup] = await Promise.all([
         page.context().waitForEvent('page'),
         menuItem.click(),
       ]);
       await popup.waitForLoadState('load');
-      expect(popup.url()).not.toBe('about:blank');
+
+      if (popupCheck.expectedElementSelector) {
+        await popup.locator(popupCheck.expectedElementSelector).waitFor({ state: 'attached' });
+      } else {
+        expect(popup.url()).not.toBe('about:blank');
+      }
     }
   });
 }

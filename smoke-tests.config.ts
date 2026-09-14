@@ -12,6 +12,16 @@ export const authConfig = {
   errorSelector: '.error-messages',
 };
 
+export interface PopupCheck {
+  // Compass-menu item to click — the compass menu stays open between clicks,
+  // so these are clicked in order without needing to reopen it each time.
+  menuItemSelector: string;
+  // Optional: element that must attach in the resulting new tab. If omitted,
+  // the check falls back to just confirming the tab navigated somewhere
+  // (its URL isn't blank).
+  expectedElementSelector?: string;
+}
+
 export interface SmokePage {
   // Shown in the test report/title.
   name: string;
@@ -32,12 +42,12 @@ export interface SmokePage {
   // Optional: expectedResultSelector's text must parse as a number greater
   // than this (e.g. 0 to require "more than 0 results").
   minResultCount?: number;
-  // Optional: clicked after the result-count check passes (e.g. a nav icon).
+  // Optional: clicked after the result-count check passes (e.g. a nav icon
+  // that opens a menu).
   postResultsClickSelector?: string;
-  // Optional: waited for (then clicked) after postResultsClickSelector opens
-  // a menu. Clicking it is expected to open a new browser tab, which is then
-  // checked to make sure it actually loads.
-  popupMenuItemSelector?: string;
+  // Optional: menu items to click in order after postResultsClickSelector
+  // opens its menu — each one is expected to open its own new browser tab.
+  popupChecks?: PopupCheck[];
 }
 
 // One entry per URL to smoke-test (checked after the shared login from
@@ -56,7 +66,11 @@ export const smokePages: SmokePage[] = [
     minResultCount: 0,
     // The compass nav icon, clicked after results are confirmed.
     postResultsClickSelector: '#compass_ctn',
-    // The 3DDashboard entry in the compass menu — clicking it opens a new tab.
-    popupMenuItemSelector: '[data-search="3DDashboard"]',
+    popupChecks: [
+      // Opens a new tab — just confirm it navigated somewhere.
+      { menuItemSelector: '[data-search="3DDashboard"]' },
+      // Opens a new tab — confirm the Communities tab actually rendered.
+      { menuItemSelector: '[data-search="3DSwym"]', expectedElementSelector: '#communities-tab' },
+    ],
   },
 ];
