@@ -1,8 +1,8 @@
 import { chromium, type FullConfig } from '@playwright/test';
 import * as dotenv from 'dotenv';
-import { authConfig } from './smoke-tests.config';
+import AuthenticationConfiguration from "./Configurations/AuthenticationConfiguration";
 
-dotenv.config();
+dotenv.config()
 
 async function globalSetup(config: FullConfig) {
   const baseURL = process.env.BASE_URL;
@@ -15,22 +15,18 @@ async function globalSetup(config: FullConfig) {
     );
   }
 
-  // Follow the same --headed flag the test runner resolved for the chromium
-  // project, so this login browser is visible whenever `npm run test:headed` is used.
   const headless = config.projects[0]?.use?.headless ?? true;
   const browser = await chromium.launch({ headless });
   const page = await browser.newPage({ ignoreHTTPSErrors: true });
-  // This page is created manually (outside the test runner's fixtures), so
-  // it doesn't inherit playwright.config.ts's actionTimeout/navigationTimeout
-  // — set the same generous defaults here for this legacy, slow-to-load app.
+
   page.setDefaultTimeout(60000);
   page.setDefaultNavigationTimeout(60000);
 
-  await page.goto(`${baseURL}${authConfig.loginPath}`);
+  await page.goto(`${baseURL}${AuthenticationConfiguration.loginPath}`);
 
-  const usernameField = page.locator(authConfig.usernameSelector);
-  const passwordField = page.locator(authConfig.passwordSelector);
-  const submitButton = page.locator(authConfig.submitSelector);
+  const usernameField = page.locator(AuthenticationConfiguration.usernameSelector);
+  const passwordField = page.locator(AuthenticationConfiguration.passwordSelector);
+  const submitButton = page.locator(AuthenticationConfiguration.submitSelector);
 
   await usernameField.waitFor({ state: 'attached' });
   await usernameField.fill(username);
@@ -39,9 +35,9 @@ async function globalSetup(config: FullConfig) {
   await submitButton.waitFor({ state: 'attached' });
   await submitButton.click();
 
-  const errorLocator = page.locator(authConfig.errorSelector);
+  const errorLocator = page.locator(AuthenticationConfiguration.errorSelector);
   await Promise.race([
-    page.waitForURL(`${baseURL}${authConfig.successUrl}`, { timeout: 60000 }),
+    page.waitForURL(`${baseURL}${AuthenticationConfiguration.successUrl}`, { timeout: 60000 }),
     errorLocator.waitFor({ state: 'visible', timeout: 60000 }).then(async () => {
       const message = await errorLocator.textContent();
       throw new Error(`Login failed: ${message?.trim() ?? 'unknown error'}`);

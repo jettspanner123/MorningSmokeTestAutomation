@@ -4,14 +4,14 @@ import * as dotenv from 'dotenv';
 dotenv.config();
 
 export default defineConfig({
-  testDir: './tests',
+  testDir: './Tests',
   fullyParallel: true,
   reporter: 'html',
   // This app is legacy 3DEXPERIENCE software — pages and elements can be
   // slow to appear, so the overall test budget needs real room for several
   // slow steps back to back (login, navigate, search, results, popup, ...).
   timeout: 180000,
-  globalSetup: require.resolve('./global-setup'),
+  globalSetup: require.resolve('./GlobalAuthenticationSetup'),
   use: {
     baseURL: process.env.BASE_URL,
     storageState: 'auth.json',

@@ -1,16 +1,22 @@
 import { test, expect } from '@playwright/test';
-import { smokePages } from '../smoke-tests.config';
+import SmokePageConfiguration from "../Configurations/SmokePageConfiguration";
+import ApplicationDateTimeHelper from "../Helpers/ApplicationDateTimeHelper";
 
-for (const pageConfig of smokePages) {
+const MAX_INDEXING_STALENESS_MINUTES = 30;
+
+for (const pageConfig of SmokePageConfiguration) {
   test(`Smoke: ${pageConfig.name}`, async ({ page }) => {
+    // Open the page we're testing.
     await page.goto(pageConfig.url);
 
+    // If a button is configured, wait for it to show up and click it.
     if (pageConfig.buttonSelector) {
       const button = page.locator(pageConfig.buttonSelector);
       await button.waitFor({ state: 'attached' });
       await button.click();
     }
 
+    // If a search box is configured, type the search term in and submit it.
     if (pageConfig.searchInputSelector && pageConfig.searchTerm) {
       const searchInput = page.locator(pageConfig.searchInputSelector);
       await searchInput.waitFor({ state: 'visible', timeout: 60000 });
@@ -24,6 +30,9 @@ for (const pageConfig of smokePages) {
       }
     }
 
+    // Check that the page actually produced the expected outcome — either a
+    // specific number of matching items, or one visible element (optionally
+    // with a minimum number shown inside it).
     const resultLocator = page.locator(pageConfig.expectedResultSelector);
 
     if (pageConfig.expectedCount !== undefined) {
@@ -32,9 +41,6 @@ for (const pageConfig of smokePages) {
       await resultLocator.waitFor({ state: 'visible', timeout: 60000 });
 
       if (pageConfig.minResultCount !== undefined) {
-        // The count can still read "0" for a moment right as the panel
-        // becomes visible (it fills in asynchronously) — poll instead of a
-        // single read.
         await expect
           .poll(async () => Number((await resultLocator.textContent())?.trim() ?? '0'), {
             timeout: 60000,
@@ -43,20 +49,48 @@ for (const pageConfig of smokePages) {
       }
     }
 
+    // If an info icon is configured, hover it, read its tooltip out loud
+    // (in the console), and flag whether the indexing time it reports is
+    // recent or stale — just informational, doesn't fail the test.
+    if (pageConfig.hoverInfoSelector && pageConfig.hoverTooltipSelector) {
+      const infoIcon = page.locator(pageConfig.hoverInfoSelector).first();
+      await infoIcon.waitFor({ state: 'attached' });
+      await infoIcon.hover();
+
+      const tooltip = page.locator(pageConfig.hoverTooltipSelector);
+      await tooltip.waitFor({ state: 'visible' });
+      const tooltipText = (await tooltip.textContent())?.trim() ?? '';
+      console.log(`[${pageConfig.name}] Info tooltip contents:`, tooltipText);
+
+      const indexingTime = ApplicationDateTimeHelper.current.parseTimeOfDay(tooltipText);
+      if (indexingTime) {
+        const diffMinutes = ApplicationDateTimeHelper.current.minutesOfDayDiff(indexingTime, new Date());
+        const formattedIndexingTime = indexingTime.toLocaleTimeString();
+        if (diffMinutes <= MAX_INDEXING_STALENESS_MINUTES) {
+          console.log(
+            `✅ [${pageConfig.name}] Indexing time ${formattedIndexingTime} is fresh (${diffMinutes.toFixed(1)}m from now, threshold ${MAX_INDEXING_STALENESS_MINUTES}m).`
+          );
+        } else {
+          console.log(
+            `❌ [${pageConfig.name}] Indexing time ${formattedIndexingTime} is stale (${diffMinutes.toFixed(1)}m from now, threshold ${MAX_INDEXING_STALENESS_MINUTES}m).`
+          );
+        }
+      }
+    }
+
+    // If configured, click the button that opens a menu once results are in
+    // (e.g. the compass nav icon).
     if (pageConfig.postResultsClickSelector) {
       const postResultsButton = page.locator(pageConfig.postResultsClickSelector);
       await postResultsButton.waitFor({ state: 'attached' });
       await postResultsButton.click();
     }
 
-    // The compass menu stays open between clicks, so these run in order
-    // against the same open menu without reopening postResultsClickSelector.
+    // Go through each menu item we're told to check, one at a time.
     for (const popupCheck of pageConfig.popupChecks ?? []) {
+      // If this item needs the menu's own search box filled in first, reveal
+      // it (if needed) and type the filter term into it.
       if (popupCheck.compassSearchInputSelector && popupCheck.compassSearchTerm) {
-        // The input isn't in the DOM at all until the icon is clicked — a
-        // same-selector element already exists elsewhere on the page (the
-        // main search bar), so a "does it already exist" pre-check falsely
-        // matched that instead and skipped clicking the icon. Always click it.
         if (popupCheck.compassSearchIconSelector) {
           const searchIcon = page.locator(popupCheck.compassSearchIconSelector);
           await searchIcon.waitFor({ state: 'attached' });
@@ -65,18 +99,11 @@ for (const pageConfig of smokePages) {
 
         const compassSearchInput = page.locator(popupCheck.compassSearchInputSelector);
         await compassSearchInput.waitFor({ state: 'attached' });
-        // This input may stay CSS-invisible even once attached — force
-        // bypasses Playwright's visibility check for this deliberate case only.
         await compassSearchInput.fill(popupCheck.compassSearchTerm, { force: true });
       }
 
-      // .first(): the compass menu can render the same item twice (e.g. a
-      // "favorites" duplicate with data-favorite-order set) — either is fine
-      // to click, so take the first match instead of erroring on ambiguity.
+      // Click the menu item and grab the new browser tab it opens.
       const menuItem = page.locator(popupCheck.menuItemSelector).first();
-      // 'attached' (DOM presence) rather than 'visible' (CSS-visible) — this
-      // only needs to exist on the page, not be within the viewport; .click()
-      // below still auto-scrolls it into view and re-checks real clickability.
       await menuItem.waitFor({ state: 'attached' });
 
       const [popup] = await Promise.all([
@@ -85,12 +112,15 @@ for (const pageConfig of smokePages) {
       ]);
       await popup.waitForLoadState('load');
 
+      // Confirm the new tab actually shows the expected content, or at
+      // least that it navigated somewhere real.
       if (popupCheck.expectedElementSelector) {
         await popup.locator(popupCheck.expectedElementSelector).first().waitFor({ state: 'attached' });
       } else {
         expect(popup.url()).not.toBe('about:blank');
       }
 
+      // Close the new tab if we're told we're done with it.
       if (popupCheck.closePopupAfterCheck) {
         await popup.close();
       }
