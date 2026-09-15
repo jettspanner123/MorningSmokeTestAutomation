@@ -13,8 +13,6 @@ for (const pageConfig of smokePages) {
 
     if (pageConfig.searchInputSelector && pageConfig.searchTerm) {
       const searchInput = page.locator(pageConfig.searchInputSelector);
-      // The search box can take a long time to load/hydrate on this app —
-      // wait for it to actually be visible before typing into it.
       await searchInput.waitFor({ state: 'visible', timeout: 60000 });
       await searchInput.fill(pageConfig.searchTerm);
       if (pageConfig.searchButtonSelector) {
@@ -27,18 +25,22 @@ for (const pageConfig of smokePages) {
     }
 
     const resultLocator = page.locator(pageConfig.expectedResultSelector);
-    // The results panel can take a while to appear too — same generous
-    // timeout as the search box above.
-    await resultLocator.waitFor({ state: 'visible', timeout: 60000 });
 
-    if (pageConfig.minResultCount !== undefined) {
-      // The count can still read "0" for a moment right as the panel becomes
-      // visible (it fills in asynchronously) — poll instead of a single read.
-      await expect
-        .poll(async () => Number((await resultLocator.textContent())?.trim() ?? '0'), {
-          timeout: 60000,
-        })
-        .toBeGreaterThan(pageConfig.minResultCount);
+    if (pageConfig.expectedCount !== undefined) {
+      await expect(resultLocator).toHaveCount(pageConfig.expectedCount, { timeout: 60000 });
+    } else {
+      await resultLocator.waitFor({ state: 'visible', timeout: 60000 });
+
+      if (pageConfig.minResultCount !== undefined) {
+        // The count can still read "0" for a moment right as the panel
+        // becomes visible (it fills in asynchronously) — poll instead of a
+        // single read.
+        await expect
+          .poll(async () => Number((await resultLocator.textContent())?.trim() ?? '0'), {
+            timeout: 60000,
+          })
+          .toBeGreaterThan(pageConfig.minResultCount);
+      }
     }
 
     if (pageConfig.postResultsClickSelector) {
@@ -50,6 +52,24 @@ for (const pageConfig of smokePages) {
     // The compass menu stays open between clicks, so these run in order
     // against the same open menu without reopening postResultsClickSelector.
     for (const popupCheck of pageConfig.popupChecks ?? []) {
+      if (popupCheck.compassSearchInputSelector && popupCheck.compassSearchTerm) {
+        // The input isn't in the DOM at all until the icon is clicked — a
+        // same-selector element already exists elsewhere on the page (the
+        // main search bar), so a "does it already exist" pre-check falsely
+        // matched that instead and skipped clicking the icon. Always click it.
+        if (popupCheck.compassSearchIconSelector) {
+          const searchIcon = page.locator(popupCheck.compassSearchIconSelector);
+          await searchIcon.waitFor({ state: 'attached' });
+          await searchIcon.click();
+        }
+
+        const compassSearchInput = page.locator(popupCheck.compassSearchInputSelector);
+        await compassSearchInput.waitFor({ state: 'attached' });
+        // This input may stay CSS-invisible even once attached — force
+        // bypasses Playwright's visibility check for this deliberate case only.
+        await compassSearchInput.fill(popupCheck.compassSearchTerm, { force: true });
+      }
+
       // .first(): the compass menu can render the same item twice (e.g. a
       // "favorites" duplicate with data-favorite-order set) — either is fine
       // to click, so take the first match instead of erroring on ambiguity.
@@ -66,9 +86,13 @@ for (const pageConfig of smokePages) {
       await popup.waitForLoadState('load');
 
       if (popupCheck.expectedElementSelector) {
-        await popup.locator(popupCheck.expectedElementSelector).waitFor({ state: 'attached' });
+        await popup.locator(popupCheck.expectedElementSelector).first().waitFor({ state: 'attached' });
       } else {
         expect(popup.url()).not.toBe('about:blank');
+      }
+
+      if (popupCheck.closePopupAfterCheck) {
+        await popup.close();
       }
     }
   });
