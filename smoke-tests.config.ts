@@ -134,4 +134,13 @@ export const smokePages: SmokePage[] = [
     expectedResultSelector: '#q_table td.left_align',
     expectedCount: 7,
   },
+  {
+    // Also authenticates via the shared 3DPassport login, same as XPDMGW.
+    name: '3DEXPERIENCE Platform GW Queue Status',
+    url: 'http://air3dxxpdmgw1srv.atlascopco.group:8040/3DEXPERIENCEPlatformGW',
+    // Same table markup as XPDMGW, but this instance only has 5 category
+    // rows rather than 7.
+    expectedResultSelector: '#q_table td.left_align',
+    expectedCount: 5,
+  },
 ];
