@@ -10,6 +10,8 @@
   "devDependencies": {
     "@playwright/test": "^1.63.0",
     "@types/node": "^22.0.0",
+    "boxen": "^5.1.2",
+    "chalk": "^4.1.2",
     "dotenv": "^16.4.5",
     "typescript": "^5.5.0"
   }
