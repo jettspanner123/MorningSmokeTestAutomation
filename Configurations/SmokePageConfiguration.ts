@@ -4,6 +4,7 @@ const SmokePageConfiguration: Array<SmokePageTypeInterface> = [
     {
         name: '3DSpace search',
         url: 'https://air3dxspace.atlascopco.group/3dspace',
+        recordPageLoadCheck: true,
         searchInputSelector: 'input.sn-search-field',
         searchTerm: 'prd',
         searchButtonSelector: '[data-rec-id="run_btn_search"]',
@@ -11,6 +12,7 @@ const SmokePageConfiguration: Array<SmokePageTypeInterface> = [
         minResultCount: 0,
         hoverInfoSelector: '[data-rec-id="SNResultMgt_wux-ui-3ds_wux-ui-3ds-1x_wux-ui-3ds-help"]',
         hoverTooltipSelector: '.maximumResultsTooltip',
+        recordIndexingFreshnessCheck: true,
         postResultsClickSelector: '#compass_ctn',
         popupChecks: [
             { menuItemSelector: '[data-search="3DDashboard"]' },

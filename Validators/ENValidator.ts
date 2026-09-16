@@ -25,6 +25,14 @@ export default class ENValidator {
                 false
             );
         }
+
+        if (!process.env.DATABASE_URL || !process.env.DIRECT_URL || !process.env.DB_ENCRYPTION_KEY) {
+            throw new EnvironmentValueNegativeException(
+                'Missing DATABASE_URL, DIRECT_URL, or DB_ENCRYPTION_KEY. Copy .env.example to .env and fill in real values.',
+                false
+            );
+        }
+
         return {baseURL, username, password}
     }
 }

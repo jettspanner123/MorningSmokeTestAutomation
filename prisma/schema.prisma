@@ -1,0 +1,94 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// One row per `npx playwright test` invocation. Every check below links back
+// to the run it happened during, so the dashboard can group results by run.
+model TestRun {
+  id        String   @id @default(cuid())
+  createdAt DateTime @default(now())
+
+  pingChecks              AuthenticationPingCheck[]
+  loginChecks             AuthenticationLoginCheck[]
+  pageLoadChecks          PageLoadCheck[]
+  indexingFreshnessChecks IndexingFreshnessCheck[]
+
+  @@map("MD_TestRunTBL")
+}
+
+// Recorded right after GlobalAuthenticationSetup navigates to the login page.
+// statusCode is null for network-level failures (DNS, connection refused,
+// TLS errors, timeouts) — those never produce an HTTP response at all.
+model AuthenticationPingCheck {
+  id         String   @id @default(cuid())
+  success    Boolean
+  message    String
+  statusCode Int?
+  createdAt  DateTime @default(now())
+
+  testRunId String
+  testRun   TestRun @relation(fields: [testRunId], references: [id])
+
+  @@map("MD_AuthenticationPingCheckTBL")
+}
+
+// Recorded right after the login attempt resolves, success or failure.
+// The password is encrypted before it ever reaches this table — see
+// Helpers/EncryptionHelper.ts.
+model AuthenticationLoginCheck {
+  id        String   @id @default(cuid())
+  username  String
+  password  String
+  success   Boolean
+  message   String
+  createdAt DateTime @default(now())
+
+  testRunId String
+  testRun   TestRun @relation(fields: [testRunId], references: [id])
+
+  @@map("MD_AuthenticationLoginCheckTBL")
+}
+
+// Shared across every smoke-test page (3DSpace, XPDMGW, etc.) rather than one
+// table per page — pageName distinguishes which page each row belongs to.
+// Recorded right after that page's SmokeTest.spec.ts navigates to it.
+model PageLoadCheck {
+  id         String   @id @default(cuid())
+  pageName   String
+  success    Boolean
+  message    String
+  statusCode Int?
+  createdAt  DateTime @default(now())
+
+  testRunId String
+  testRun   TestRun @relation(fields: [testRunId], references: [id])
+
+  @@map("MD_PageLoadCheckTBL")
+}
+
+// Recorded after the "prd" search results and indexing tooltip are both
+// read. indexTime is the timestamp reported in the tooltip; it should always
+// be at or behind machineTime (the server can't index in the future) — see
+// Helpers/ApplicationDateTimeHelper.ts for the wraparound-aware diff.
+// Column names are snake_case for this table specifically, per request.
+model IndexingFreshnessCheck {
+  id             String   @id @default(cuid())
+  resultCount    Int      @map("result_count")
+  indexTime      DateTime @map("index_time")
+  machineTime    DateTime @map("machine_time")
+  timeDifference Float    @map("time_difference")
+  isFresh        Boolean  @map("is_fresh")
+  message        String
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  testRunId String  @map("test_run_id")
+  testRun   TestRun @relation(fields: [testRunId], references: [id])
+
+  @@map("MD_IndexingFreshnessCheckTBL")
+}

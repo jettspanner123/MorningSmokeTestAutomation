@@ -1,6 +1,7 @@
 node_modules/
 .env
 auth.json
+.current-test-run-id
 test-results/
 playwright-report/
 blob-report/

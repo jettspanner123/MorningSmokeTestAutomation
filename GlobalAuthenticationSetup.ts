@@ -5,12 +5,17 @@ import boxen from 'boxen';
 import AuthenticationConfiguration from "./Configurations/AuthenticationConfiguration";
 import ENValidator from "./Validators/ENValidator";
 import EnvironmentValueNegativeException from "./Exceptions/EnvironmentValueNegativeException";
+import ApplicationDatabaseService from "./Services/DatabaseServices/ApplicationDatabaseService";
+import ApplicationDatabaseProvider from "./Providers/ApplicationDatabaseProvider";
+import TestRunIdHelper from "./Helpers/TestRunIdHelper";
 
 dotenv.config()
 
 async function globalSetup(config: FullConfig) {
     try {
         const {username, password, baseURL} = ENValidator.current.checkOrThrowRequiredENVariables();
+        const testRunId = await ApplicationDatabaseService.current.startTestRun();
+        TestRunIdHelper.current.write(testRunId);
 
         const headless = config.projects[0]?.use?.headless ?? true;
         const browser = await chromium.launch({headless});
@@ -19,7 +24,25 @@ async function globalSetup(config: FullConfig) {
         page.setDefaultTimeout(60000);
         page.setDefaultNavigationTimeout(60000);
 
-        await page.goto(`${baseURL}${AuthenticationConfiguration.loginPath}`);
+        // Pinging the login page can fail two different ways: a network-level
+        // failure (DNS, connection refused, TLS error, timeout) throws and
+        // never produces an HTTP response, so statusCode stays null; an
+        // HTTP-level response (even a 404/500) resolves normally with a real
+        // status code.
+        try {
+            const response = await page.goto(`${baseURL}${AuthenticationConfiguration.loginPath}`);
+            const statusCode = response?.status() ?? null;
+            const success = response?.ok() ?? true;
+            const message = success
+                ? `Page loaded successfully${statusCode ? ` (HTTP ${statusCode}).` : '.'}`
+                : `Page responded with HTTP ${statusCode}.`;
+
+            await ApplicationDatabaseService.current.recordAuthenticationPingCheck({testRunId, success, message, statusCode});
+        } catch (pingError) {
+            const message = pingError instanceof Error ? pingError.message : String(pingError);
+            await ApplicationDatabaseService.current.recordAuthenticationPingCheck({testRunId, success: false, message, statusCode: null});
+            throw pingError;
+        }
 
         const usernameField = page.locator(AuthenticationConfiguration.usernameSelector);
         const passwordField = page.locator(AuthenticationConfiguration.passwordSelector);
@@ -32,17 +55,38 @@ async function globalSetup(config: FullConfig) {
         await submitButton.waitFor({state: 'attached'});
         await submitButton.click();
 
-        const errorLocator = page.locator(AuthenticationConfiguration.errorSelector);
-        await Promise.race([
-            page.waitForURL(`${baseURL}${AuthenticationConfiguration.successUrl}`, {timeout: 60000}),
-            errorLocator.waitFor({state: 'visible', timeout: 60000}).then(async () => {
-                const message = await errorLocator.textContent();
-                throw new Error(`Login failed: ${message?.trim() ?? 'unknown error'}`);
-            }),
-        ]);
+        try {
+            const errorLocator = page.locator(AuthenticationConfiguration.errorSelector);
+            await Promise.race([
+                page.waitForURL(`${baseURL}${AuthenticationConfiguration.successUrl}`, {timeout: 60000}),
+                errorLocator.waitFor({state: 'visible', timeout: 60000}).then(async () => {
+                    const message = await errorLocator.textContent();
+                    throw new Error(`Login failed: ${message?.trim() ?? 'unknown error'}`);
+                }),
+            ]);
+
+            await ApplicationDatabaseService.current.recordAuthenticationLoginCheck({
+                testRunId,
+                username,
+                plainTextPassword: password,
+                success: true,
+                message: 'Login succeeded.',
+            });
+        } catch (loginError) {
+            const message = loginError instanceof Error ? loginError.message : String(loginError);
+            await ApplicationDatabaseService.current.recordAuthenticationLoginCheck({
+                testRunId,
+                username,
+                plainTextPassword: password,
+                success: false,
+                message,
+            });
+            throw loginError;
+        }
 
         await page.context().storageState({path: 'auth.json'});
         await browser.close();
+        await ApplicationDatabaseProvider.current.disconnect();
     } catch (error) {
         if (error instanceof EnvironmentValueNegativeException) {
             console.error(boxen(
@@ -63,8 +107,6 @@ async function globalSetup(config: FullConfig) {
         } else {
             // Anything else (login failure, timeout, network error, ...) used to
             // be silently swallowed here — global setup would appear to succeed
-            // and every real test would then fail confusingly downstream instead
-            // of a clear "setup failed" message. Print it clearly and exit instead.
             const actualError = error instanceof Error ? error : new Error(String(error));
             console.error(boxen(
                 `${chalk.white(actualError.message)}\n\n` +
@@ -80,6 +122,7 @@ async function globalSetup(config: FullConfig) {
             ));
         }
 
+        await ApplicationDatabaseProvider.current.disconnect();
         process.exit(1);
     }
 }

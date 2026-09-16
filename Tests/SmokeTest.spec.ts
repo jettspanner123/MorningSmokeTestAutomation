@@ -1,13 +1,47 @@
 import { test, expect } from '@playwright/test';
 import SmokePageConfiguration from "../Configurations/SmokePageConfiguration";
 import ApplicationDateTimeHelper from "../Helpers/ApplicationDateTimeHelper";
+import ApplicationDatabaseService from "../Services/DatabaseServices/ApplicationDatabaseService";
+import TestRunIdHelper from "../Helpers/TestRunIdHelper";
 
 const MAX_INDEXING_STALENESS_MINUTES = 30;
 
 for (const pageConfig of SmokePageConfiguration) {
   test(`Smoke: ${pageConfig.name}`, async ({ page }) => {
-    // Open the page we're testing.
-    await page.goto(pageConfig.url);
+    // Open the page we're testing. If configured, also record whether it
+    // loaded (success or failure) to the shared PageLoadCheck table.
+    if (pageConfig.recordPageLoadCheck) {
+      const testRunId = TestRunIdHelper.current.read();
+
+      try {
+        const response = await page.goto(pageConfig.url);
+        const statusCode = response?.status() ?? null;
+        const success = response?.ok() ?? true;
+        const message = success
+          ? `Page loaded successfully${statusCode ? ` (HTTP ${statusCode}).` : '.'}`
+          : `Page responded with HTTP ${statusCode}.`;
+
+        await ApplicationDatabaseService.current.recordPageLoadCheck({
+          testRunId,
+          pageName: pageConfig.name,
+          success,
+          message,
+          statusCode,
+        });
+      } catch (gotoError) {
+        const message = gotoError instanceof Error ? gotoError.message : String(gotoError);
+        await ApplicationDatabaseService.current.recordPageLoadCheck({
+          testRunId,
+          pageName: pageConfig.name,
+          success: false,
+          message,
+          statusCode: null,
+        });
+        throw gotoError;
+      }
+    } else {
+      await page.goto(pageConfig.url);
+    }
 
     // If a button is configured, wait for it to show up and click it.
     if (pageConfig.buttonSelector) {
@@ -34,9 +68,11 @@ for (const pageConfig of SmokePageConfiguration) {
     // specific number of matching items, or one visible element (optionally
     // with a minimum number shown inside it).
     const resultLocator = page.locator(pageConfig.expectedResultSelector);
+    let resultCount = 0;
 
     if (pageConfig.expectedCount !== undefined) {
       await expect(resultLocator).toHaveCount(pageConfig.expectedCount, { timeout: 60000 });
+      resultCount = pageConfig.expectedCount;
     } else {
       await resultLocator.waitFor({ state: 'visible', timeout: 60000 });
 
@@ -47,6 +83,8 @@ for (const pageConfig of SmokePageConfiguration) {
           })
           .toBeGreaterThan(pageConfig.minResultCount);
       }
+
+      resultCount = Number((await resultLocator.textContent())?.trim() ?? '0');
     }
 
     // If an info icon is configured, hover it, read its tooltip out loud
@@ -64,16 +102,26 @@ for (const pageConfig of SmokePageConfiguration) {
 
       const indexingTime = ApplicationDateTimeHelper.current.parseTimeOfDay(tooltipText);
       if (indexingTime) {
-        const diffMinutes = ApplicationDateTimeHelper.current.minutesOfDayDiff(indexingTime, new Date());
+        const machineTime = new Date();
+        const diffMinutes = ApplicationDateTimeHelper.current.minutesOfDayDiff(indexingTime, machineTime);
+        const isFresh = diffMinutes <= MAX_INDEXING_STALENESS_MINUTES;
         const formattedIndexingTime = indexingTime.toLocaleTimeString();
-        if (diffMinutes <= MAX_INDEXING_STALENESS_MINUTES) {
-          console.log(
-            `✅ [${pageConfig.name}] Indexing time ${formattedIndexingTime} is fresh (${diffMinutes.toFixed(1)}m from now, threshold ${MAX_INDEXING_STALENESS_MINUTES}m).`
-          );
-        } else {
-          console.log(
-            `❌ [${pageConfig.name}] Indexing time ${formattedIndexingTime} is stale (${diffMinutes.toFixed(1)}m from now, threshold ${MAX_INDEXING_STALENESS_MINUTES}m).`
-          );
+        const freshnessMessage = isFresh
+          ? `Indexing time ${formattedIndexingTime} is fresh (${diffMinutes.toFixed(1)}m from now, threshold ${MAX_INDEXING_STALENESS_MINUTES}m).`
+          : `Indexing time ${formattedIndexingTime} is stale (${diffMinutes.toFixed(1)}m from now, threshold ${MAX_INDEXING_STALENESS_MINUTES}m).`;
+
+        console.log(`${isFresh ? '✅' : '❌'} [${pageConfig.name}] ${freshnessMessage}`);
+
+        if (pageConfig.recordIndexingFreshnessCheck) {
+          await ApplicationDatabaseService.current.recordIndexingFreshnessCheck({
+            testRunId: TestRunIdHelper.current.read(),
+            resultCount,
+            indexTime: indexingTime,
+            machineTime,
+            timeDifference: diffMinutes,
+            isFresh,
+            message: freshnessMessage,
+          });
         }
       }
     }
