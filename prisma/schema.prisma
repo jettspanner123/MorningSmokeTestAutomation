@@ -18,6 +18,7 @@ model TestRun {
   loginChecks             AuthenticationLoginCheck[]
   pageLoadChecks          PageLoadCheck[]
   indexingFreshnessChecks IndexingFreshnessCheck[]
+  queueStatusChecks       QueueStatusCheck[]
 
   @@map("MD_TestRunTBL")
 }
@@ -91,4 +92,27 @@ model IndexingFreshnessCheck {
   testRun   TestRun @relation(fields: [testRunId], references: [id])
 
   @@map("MD_IndexingFreshnessCheckTBL")
+}
+
+// Shared across every gateway queue-status page (XPDMGW, 3DEXPERIENCE
+// Platform GW, ...) — pageName distinguishes which page each row belongs to.
+// One row per state (Blocking, Waiting for Processing, Finished, ...); the
+// number of rows written per check varies by page (XPDMGW has 7, 3DEXPERIENCE
+// Platform GW has 5) since the table shows a different set of states, but the
+// structure is identical. Time-bucket values are stored as strings, not
+// numbers — the "Finished" row can show "999+", which isn't a valid number.
+model QueueStatusCheck {
+  id                String   @id @default(cuid())
+  pageName          String
+  state             String
+  lessThan10Min     String
+  lessThan1Hour     String
+  lessThan4Hours    String
+  greaterThan4Hours String
+  createdAt         DateTime @default(now())
+
+  testRunId String
+  testRun   TestRun @relation(fields: [testRunId], references: [id])
+
+  @@map("MD_QueueStatusCheckTBL")
 }

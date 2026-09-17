@@ -73,6 +73,33 @@ for (const pageConfig of SmokePageConfiguration) {
     if (pageConfig.expectedCount !== undefined) {
       await expect(resultLocator).toHaveCount(pageConfig.expectedCount, { timeout: 60000 });
       resultCount = pageConfig.expectedCount;
+
+      // If configured, parse every state row of the queue-status table and
+      // write them all to the shared QueueStatusCheck table.
+      if (pageConfig.recordQueueStatusCheck && pageConfig.queueStatusTableSelector) {
+        const rows = await page
+          .locator(`${pageConfig.queueStatusTableSelector} tr`)
+          .evaluateAll((trs) =>
+            trs
+              // Skip the header row — it has <th>s, no <td>s.
+              .filter((tr) => tr.querySelector('td'))
+              .map((tr) => {
+                const cells = Array.from(tr.querySelectorAll('td'));
+                return {
+                  state: cells[0]?.querySelector('a')?.textContent?.trim() ?? cells[0]?.textContent?.trim() ?? '',
+                  lessThan10Min: cells[1]?.textContent?.trim() ?? '',
+                  lessThan1Hour: cells[2]?.textContent?.trim() ?? '',
+                  lessThan4Hours: cells[3]?.textContent?.trim() ?? '',
+                  greaterThan4Hours: cells[4]?.textContent?.trim() ?? '',
+                };
+              })
+          );
+
+        const testRunId = TestRunIdHelper.current.read();
+        await ApplicationDatabaseService.current.recordQueueStatusChecks(
+          rows.map((row) => ({ testRunId, pageName: pageConfig.name, ...row }))
+        );
+      }
     } else {
       await resultLocator.waitFor({ state: 'visible', timeout: 60000 });
 

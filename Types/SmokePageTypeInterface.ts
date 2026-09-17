@@ -20,6 +20,12 @@ export default interface SmokePageTypeInterface {
     // Requires hoverInfoSelector/hoverTooltipSelector and minResultCount to
     // also be set, since it reuses their computed values.
     recordIndexingFreshnessCheck?: boolean;
+    // Opt-in: parses every row of the table at queueStatusTableSelector
+    // (one row per state, e.g. Blocking/Finished/...) and writes them all to
+    // the shared QueueStatusCheck table (MD_QueueStatusCheckTBL), using
+    // `name` as the pageName column. Requires queueStatusTableSelector.
+    recordQueueStatusCheck?: boolean;
+    queueStatusTableSelector?: string;
     postResultsClickSelector?: string;
     popupChecks?: Array<PopupCheckTypeInterface>;
 }

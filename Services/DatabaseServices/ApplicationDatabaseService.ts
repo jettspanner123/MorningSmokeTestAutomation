@@ -4,6 +4,7 @@ import AuthenticationPingCheckTypeInterface from "../../Types/AuthenticationPing
 import AuthenticationLoginCheckTypeInterface from "../../Types/AuthenticationLoginCheckTypeInterface";
 import PageLoadCheckTypeInterface from "../../Types/PageLoadCheckTypeInterface";
 import IndexingFreshnessCheckTypeInterface from "../../Types/IndexingFreshnessCheckTypeInterface";
+import QueueStatusCheckTypeInterface from "../../Types/QueueStatusCheckTypeInterface";
 
 export default class ApplicationDatabaseService {
     public static current = new ApplicationDatabaseService();
@@ -50,6 +51,14 @@ export default class ApplicationDatabaseService {
 
         await ApplicationDatabaseProvider.current.client.indexingFreshnessCheck.create({
             data: {testRunId, resultCount, indexTime, machineTime, timeDifference, isFresh, message},
+        });
+    }
+
+    // One check produces multiple rows (one per state) — write them all in a
+    // single call rather than looping individual creates.
+    public async recordQueueStatusChecks(rows: Array<QueueStatusCheckTypeInterface>): Promise<void> {
+        await ApplicationDatabaseProvider.current.client.queueStatusCheck.createMany({
+            data: rows,
         });
     }
 }

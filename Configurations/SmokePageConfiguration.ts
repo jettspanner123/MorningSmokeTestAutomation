@@ -44,8 +44,11 @@ const SmokePageConfiguration: Array<SmokePageTypeInterface> = [
     {
         name: 'XPDMGW Queue Status',
         url: 'http://air3dxgw1srv.atlascopco.group:8050/XPDMGW/',
+        recordPageLoadCheck: true,
         expectedResultSelector: '#q_table td.left_align',
         expectedCount: 7,
+        recordQueueStatusCheck: true,
+        queueStatusTableSelector: '#q_table',
     },
     {
         name: '3DEXPERIENCE Platform GW Queue Status',
